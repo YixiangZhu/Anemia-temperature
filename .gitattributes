@@ -13,7 +13,7 @@ data<-data_DHS_Africa
 model_anemia <- glmer(anemia~data$lag_year_temp
 	+ lag0365_percip
 	+ as.factor(age_level)
-     + as.factor(twin)
+        + as.factor(twin)
 	+ as.factor(sex)
 	+ child_BMI
 	+ as.factor(resid_type)
