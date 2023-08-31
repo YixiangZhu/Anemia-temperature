@@ -8,7 +8,6 @@ country<-as.character(country_amenia$country)
 
 #national population structures
 pop_pro<-read.csv("/d2/public/DHS/DHS_Amenia/country_au5_proportion.csv")
-pop_pro<-pop_pro[,c(1,24)]
 
 #List of models
 model_scenery<-c("AWI-CM-1-1-MR","CAMS-CSM1-0","CanESM5","CESM2",
@@ -484,10 +483,6 @@ y_3_whole<-c(RR_ssp585_plot_whole$PAF_RR_high,rev(RR_ssp585_plot_whole$PAF_RR_lo
 
 jpeg("C:/Users/yxzhu/Desktop/amenia_PAF_region.jpg",res=300,
      width=3000,height=2000)
-
-par(par(mar=c(4,4,2,1)),cex.axis=0.9,cex.lab=1.2,mgp=c(2.5,1,0))
-
-layout(matrix(1:6,2,3))
 
 plot(PAF_RR ~ year,data =RR_ssp245_plot_whole,type = "l",ylab="Excess cases per 100,000 person-year",xlim=c(1985,2100),ylim=c(-3000,15000),xlab="Year",col=rgb(0.1, 0.3, 0.6,1),main="(A) Sub-Saharan Africa",
     cex.main=1.5,cex.lab=1.5, cex.axis=1.2,lwd=2)
