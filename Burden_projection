@@ -1,0 +1,507 @@
+library(lubridate)
+library(dplyr)
+library(hyfo)
+
+#country names
+country_amenia<-read.csv("/d2/public/DHS/DHS_Amenia/country_amenia.csv")
+country<-as.character(country_amenia$country)
+
+#national population structures
+pop_pro<-read.csv("/d2/public/DHS/DHS_Amenia/country_au5_proportion.csv")
+pop_pro<-pop_pro[,c(1,24)]
+
+#List of models
+model_scenery<-c("AWI-CM-1-1-MR","CAMS-CSM1-0","CanESM5","CESM2",
+    "CMCC-CM2-SR5","EC-Earth3","EC-Earth3-Veg","FGOALS-g3","GFDL-ESM4",
+    "IITM-ESM","INM-CM4-8","KACE-1-0-G","KIOST-ESM",
+    "MIROC6","MPI-ESM1-2-HR","MPI-ESM1-2-LR","MRI-ESM2-0","NESM3",
+    "NorESM2-MM","UKESM1-0-LL")
+
+#Historical data by country, model, and city
+
+for (i in 1:26){
+
+    country_select<-country[i]
+    cat(country_select)
+
+    #国家别城市列表导入
+    city_location<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/country_city/data_",country_select,"_city.csv"))
+    city<-as.character(city_location$OBJECTID)
+
+    model_tas_historical<-list()
+    
+    for (j in model_scenery){
+
+        cat(j)
+
+         for (k in 1:nrow(city_location)){
+
+            cat(k)
+
+            
+            model_select<-j
+
+            city_select<-city[k]
+            
+            #Country-city specific ERA5 temperature data
+            data_ERA5_his<-read.csv(paste0("/d2/home/user9/DHS_city_ERA5_matching/",country_select,"/[",k,"].csv"))
+            data_ERA5_his$time<-as.Date(data_ERA5_his$time)
+
+            #Country-city specific historical model temperature
+            frame_model_tas_historical<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/future_project_city/",country_select,"/",model_select,"/historical/",city_select,".csv"))
+            
+            #Historical data correction
+            #historical Model data import
+            historical<-frame_model_tas_historical
+            historical$time<-as.Date(historical$time)
+            names(historical)<-c("date","temp_model")
+
+            #Observation data import
+            real<-data_ERA5_his
+            real<-real[,c("time","t2m")]
+            names(real)<-c("date","temp_real")
+            real$date<-as.Date(real$date)
+
+            input<-merge(real,historical,by="date",all.x=TRUE)
+            input<-input[which(input$date>='2000-1-1'&input$date<='2020-12-31'),]
+
+            #Variable extraction
+            real_input<-input[,c(1,2)]
+            historical_input<-input[,c(1,3)]
+
+            historical<-data.frame(historical)
+            historical_input<-data.frame(historical_input)
+            real_input<-data.frame(real_input)
+
+            historical$date<-as.Date(historical$date)
+            historical_input$date<-as.Date(historical_input$date)
+            real_input$date<-as.Date(real_input$date)
+
+            data<-list(historical,historical_input,real_input)
+
+            tryCatch({
+
+            #Time limit for downscaling
+            datalist <- extractPeriod(data, startDate = '2000-01-01', endDate = '2014-12-30')
+
+            if (all(is.na(datalist))){
+
+                frc_new<-historical
+
+                } else{
+
+            frc <- historical
+            hindcast <- datalist[[2]]
+            obs <- datalist[[3]]
+
+            #Statistical downscaling
+            frc_new <- biasCorrect(frc, hindcast, obs, method = 'scaling', scaleType = 'multi')
+                }
+            }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+            frame_model_tas_historical$time<-as.Date(frame_model_tas_historical$time)
+            frame_model_tas_historical$year<-year(frame_model_tas_historical$time)
+            frame_model_tas_historical$tas<-frc_new$temp_model
+            frame_model_tas_historical<-frame_model_tas_historical%>% group_by(year) %>% summarise_each(funs(mean))
+            model_tas_historical[[j]][[k]]<-frame_model_tas_historical
+
+         }
+    }
+
+    save(model_tas_historical,file=paste0("/d2/public/DHS/DHS_Amenia/future_project_merge/historical/model_tas_historical_",country_select,".rda"))
+}
+
+#Ssp126 scenario data by country, model, and city
+
+for (i in 1:26){
+
+    country_select<-country[i]
+    cat(country_select)
+
+    #list of countries and cities
+    city_location<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/country_city/data_",country_select,"_city.csv"))
+    city<-as.character(city_location$OBJECTID)
+
+    model_tas_ssp126<-list()
+    
+    for (j in model_scenery){
+
+        cat(j)
+
+         for (k in 1:nrow(city_location)){
+
+            cat(k)
+ 
+            model_select<-j
+
+            city_select<-city[k]
+            
+            #Country-city specific ERA5 temperature data
+            data_ERA5_his<-read.csv(paste0("/d2/home/user9/DHS_city_ERA5_matching/",country_select,"/[",k,"].csv"))
+            data_ERA5_his$time<-as.Date(data_ERA5_his$time)
+
+            #Country-city specific historical model temperature
+            frame_model_tas_historical<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/future_project_city/",country_select,"/",model_select,"/historical/",city_select,".csv"))
+            
+            #Country-city specific ssp126 model temperature
+            frame_model_tas_ssp126<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/future_project_city/",country_select,"/",model_select,"/ssp126/",city_select,".csv"))
+            
+            #historical and ssp126 Model data import
+            historical<-frame_model_tas_historical
+            historical$time<-as.Date(historical$time)
+            names(historical)<-c("date","temp_model")
+
+            #ssp126 Model data import
+            ssp126<-frame_model_tas_ssp126
+            ssp126$time<-as.Date(ssp126$time)
+            names(ssp126)<-c("date","temp_model")
+
+           #Observation data import
+            real<-data_ERA5_his
+            real<-real[,c("time","t2m")]
+            names(real)<-c("date","temp_real")
+            real$date<-as.Date(real$date)
+
+            #Data Merge
+            input<-merge(real,historical,by="date",all.x=TRUE)
+
+            real_input<-input[,c(1,2)]
+            historical_input<-input[,c(1,3)]
+
+            historical<-data.frame(historical)
+            historical_input<-data.frame(historical_input)
+            real_input<-data.frame(real_input)
+
+            historical$date<-as.Date(historical$date)
+            historical_input$date<-as.Date(historical_input$date)
+            real_input$date<-as.Date(real_input$date)
+
+            data<-list(historical,historical_input,real_input)
+
+            tryCatch({
+
+                #Time limit for downscaling
+                datalist <- extractPeriod(data, startDate = '2000-01-01', endDate = '2014-12-30')
+
+                if (all(is.na(datalist))){
+
+                    frc_new<-ssp126
+        
+            } else{
+
+                frc <- ssp126
+                hindcast <- datalist[[2]]
+                obs <- datalist[[3]]
+
+                #Statistical downscaling
+                frc_new <- biasCorrect(frc, hindcast, obs, method = 'scaling', scaleType = 'multi')
+          
+            }
+          }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+            frame_model_tas_ssp126$time<-as.Date(frame_model_tas_ssp126$time)
+            frame_model_tas_ssp126$year<-year(frame_model_tas_ssp126$time)
+            frame_model_tas_ssp126$tas<-frc_new$temp_model
+            frame_model_tas_ssp126<-frame_model_tas_ssp126%>% group_by(year) %>% summarise_each(funs(mean))
+            model_tas_ssp126[[j]][[k]]<-frame_model_tas_ssp126
+
+         }
+    }
+
+    save(model_tas_ssp126,file=paste0("/d2/public/DHS/DHS_Amenia/future_project_merge/ssp126/model_tas_ssp126_",country_select,".rda"))
+}
+
+#===========================================================================================================================================
+
+#SSP245 and SSP585 scenario data  by country, model, and city are similar
+
+#===========================================================================================================================================
+
+#Disease burden calculation
+#===========================================================================================================================================
+library(plyr)
+library(lubridate)
+library(epiDisplay)
+library(dplyr)
+
+#Country name import
+country_amenia<-read.csv("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/data_resource_new/country_amenia.csv")
+country<-as.character(country_amenia$country)
+
+#Country specific OR value import
+country_specific_RR<-read.csv("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/data_resource_new/country_specific_RR.csv")
+
+#Country specific anemia prevalence
+amenia_prevalence<-read.csv("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/data_resource_new/amenia_prevalence.csv")
+
+#List of models
+model_scenery<-c("AWI-CM-1-1-MR","CAMS-CSM1-0","CanESM5","CESM2",
+    "CMCC-CM2-SR5","EC-Earth3","EC-Earth3-Veg","FGOALS-g3","GFDL-ESM4",
+    "IITM-ESM","INM-CM4-8","KACE-1-0-G","KIOST-ESM",
+    "MIROC6","MPI-ESM1-2-HR","MPI-ESM1-2-LR","MRI-ESM2-0","NESM3",
+    "NorESM2-MM","UKESM1-0-LL")
+
+for (i in 1:26){
+
+    #Country specific population structure
+    country_au5_proportion<-read.csv("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/data_resource_new/country_au5_proportion.csv")
+    country_au5_proportion<-country_au5_proportion[,c(1,23,24)]
+
+    country_select<-country[i]
+    cat(country_select)
+
+    load(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/exposure_data/historical/model_tas_historical_",country_select,".rda"))
+    load(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/exposure_data/ssp126/model_tas_ssp126_",country_select,".rda"))
+    load(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/exposure_data/ssp245/model_tas_ssp245_",country_select,".rda"))
+    load(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/exposure_data/ssp585/model_tas_ssp585_",country_select,".rda"))
+    
+    #national population structures
+    country_pop<-read.csv(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/demographic_data/csv/",country_select,".csv"))
+    country_au5_proportion<-country_au5_proportion[i,3]
+    country_pop$au5_num<-round(country_pop$SUM*country_au5_proportion)
+
+    city_location<-read.csv(paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/country_city/data_",country_select,"_city.csv"))
+    city<-as.character(city_location$OBJECTID)
+
+    #Country specific anemia prevalence extraction
+    total_RR<-country_specific_RR[i,2]
+    total_RR_low<-country_specific_RR[i,3]
+    total_RR_high<-country_specific_RR[i,4]
+    mild_RR<-country_specific_RR[i,5]
+    mild_RR_low<-country_specific_RR[i,6]
+    mild_RR_high<-country_specific_RR[i,7]
+    moderate_RR<-country_specific_RR[i,8]
+    moderate_RR_low<-country_specific_RR[i,9]
+    moderate_RR_high<-country_specific_RR[i,10]
+    severe_RR<-country_specific_RR[i,11]
+    severe_RR_low<-country_specific_RR[i,12]
+    severe_RR_high<-country_specific_RR[i,13]
+
+    #country specific anemia prevalence
+    country_amenia_prevalence<-amenia_prevalence[i,2]
+
+    for (j in model_scenery){
+
+
+        cat(j)
+
+         for (k in 1:nrow(city_location)){
+
+            cat(k)
+
+            #city specific population data for children under 5 years
+            city_pop_au5<-country_pop[k,7]
+
+            model_tas_historical_select <- model_tas_historical[[j]][[k]]
+            model_tas_ssp126_select <- model_tas_ssp126[[j]][[k]]
+            model_tas_ssp245_select <- model_tas_ssp245[[j]][[k]]
+            model_tas_ssp585_select <- model_tas_ssp585[[j]][[k]]
+
+            model_tas_historical_select<-model_tas_historical_select[c(1:65),]
+            model_tas_ssp126_select<-model_tas_ssp126_select[c(1:85),]
+            model_tas_ssp245_select<-model_tas_ssp245_select[c(1:85),]
+            model_tas_ssp585_select<-model_tas_ssp585_select[c(1:85),]
+               
+            #baseline temperature in 1985-2015
+            row_num<-nrow(model_tas_historical_select)
+            model_tas_historical_select_mean<-model_tas_historical_select[c((row_num-30):row_num),3]
+            tas_baseline<-mean(model_tas_historical_select_mean$tas)
+
+            #temperature change
+            model_tas_historical_select$tas_differ <- model_tas_historical_select$tas-tas_baseline
+            model_tas_ssp126_select$tas_differ <- model_tas_ssp126_select$tas-tas_baseline
+            model_tas_ssp245_select$tas_differ <- model_tas_ssp245_select$tas-tas_baseline
+            model_tas_ssp585_select$tas_differ <- model_tas_ssp585_select$tas-tas_baseline
+            
+            #excess cases per 1℃ 
+            fun_historical<-function(a){
+                model_tas_historical_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((a-1)/a))
+            }
+            fun_ssp126<-function(a){
+                model_tas_ssp126_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((a-1)/a))
+            }
+
+            fun_ssp245<-function(a){
+                model_tas_ssp245_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((a-1)/a))
+            }
+
+            fun_ssp585<-function(a){
+                model_tas_ssp585_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((a-1)/a))
+            }
+
+            n=10000
+
+            RR_SD<-(total_RR_high-total_RR_low)/(1.96*2)
+
+            frame_historical_k<-matrix(rnorm(n,mean=total_RR,sd=RR_SD))
+            frame_ssp126_k<-matrix(rnorm(n,mean=total_RR,sd=RR_SD))
+            frame_ssp245_k<-matrix(rnorm(n,mean=total_RR,sd=RR_SD))
+            frame_ssp585_k<-matrix(rnorm(n,mean=total_RR,sd=RR_SD))
+
+            frame_historical_total<-apply(frame_historical_k, 1, fun_historical)
+            frame_ssp126_total<-apply(frame_ssp126_k, 1, fun_ssp126)
+            frame_ssp245_total<-apply(frame_ssp245_k, 1, fun_ssp245)
+            frame_ssp585_total<-apply(frame_ssp585_k, 1, fun_ssp585)
+            
+            frame_historical_dis<-data.frame(matrix(NA,nrow(frame_historical_total),3))            
+            frame_ssp126_dis<-data.frame(matrix(NA,nrow(frame_ssp126_total),3))
+            frame_ssp245_dis<-data.frame(matrix(NA,nrow(frame_ssp245_total),3))
+            frame_ssp585_dis<-data.frame(matrix(NA,nrow(frame_ssp585_total),3))
+
+            colnames(frame_historical_dis)<-c("dis_total","dis_low","dis_high")
+            colnames(frame_ssp126_dis)<-c("dis_total","dis_low","dis_high")
+            colnames(frame_ssp245_dis)<-c("dis_total","dis_low","dis_high")
+            colnames(frame_ssp585_dis)<-c("dis_total","dis_low","dis_high")
+
+            frame_historical_dis$dis_total<-model_tas_historical_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((total_RR-1)/total_RR))
+            frame_ssp126_dis$dis_total<-model_tas_ssp126_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((total_RR-1)/total_RR))
+            frame_ssp245_dis$dis_total<-model_tas_ssp245_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((total_RR-1)/total_RR))
+            frame_ssp585_dis$dis_total<-model_tas_ssp585_select$tas_differ*(city_pop_au5*country_amenia_prevalence*((total_RR-1)/total_RR))
+
+            for(i in 1:nrow(frame_historical_total)){
+
+                frame_historical_dis[i,2]<-quantile(frame_historical_total[i,],0.025)
+                frame_historical_dis[i,3]<-quantile(frame_historical_total[i,],0.975)
+
+            }
+ 
+            for(i in 1:nrow(frame_ssp126_total)){
+
+                frame_ssp126_dis[i,2]<-quantile(frame_ssp126_total[i,],0.025)
+                frame_ssp126_dis[i,3]<-quantile(frame_ssp126_total[i,],0.975)
+
+            }
+ 
+            for(i in 1:nrow(frame_ssp245_total)){
+
+                frame_ssp245_dis[i,2]<-quantile(frame_ssp245_total[i,],0.025)
+                frame_ssp245_dis[i,3]<-quantile(frame_ssp245_total[i,],0.975)
+
+            }
+
+            for(i in 1:nrow(frame_ssp585_total)){
+
+                frame_ssp585_dis[i,2]<-quantile(frame_ssp585_total[i,],0.025)
+                frame_ssp585_dis[i,3]<-quantile(frame_ssp585_total[i,],0.975)
+
+            }
+
+            #excess cases attributable to temperature change
+            
+            model_tas_historical_select$dis_total <- frame_historical_dis$dis_total
+            model_tas_historical_select$dis_low <- frame_historical_dis$dis_low
+            model_tas_historical_select$dis_high <- frame_historical_dis$dis_high
+
+            model_tas_ssp126_select$dis_total <- frame_ssp126_dis$dis_total
+            model_tas_ssp126_select$dis_low <- frame_ssp126_dis$dis_low
+            model_tas_ssp126_select$dis_high <- frame_ssp126_dis$dis_high
+
+            model_tas_ssp245_select$dis_total <- frame_ssp245_dis$dis_total
+            model_tas_ssp245_select$dis_low <-frame_ssp245_dis$dis_low
+            model_tas_ssp245_select$dis_high <- frame_ssp245_dis$dis_high
+
+            model_tas_ssp585_select$dis_total <- frame_ssp585_dis$dis_total
+            model_tas_ssp585_select$dis_low <- frame_ssp585_dis$dis_low
+            model_tas_ssp585_select$dis_high <- frame_ssp585_dis$dis_high
+
+            model_tas_historical[[j]][[k]]<-model_tas_historical_select
+            model_tas_ssp126[[j]][[k]]<-model_tas_ssp126_select
+            model_tas_ssp245[[j]][[k]]<-model_tas_ssp245_select
+            model_tas_ssp585[[j]][[k]]<-model_tas_ssp585_select
+
+            model_tas_historical_mob<-model_tas_historical
+            model_tas_ssp126_mob<-model_tas_ssp126
+            model_tas_ssp245_mob<-model_tas_ssp245
+            model_tas_ssp585_mob<-model_tas_ssp585
+
+          }
+      }
+
+      save(model_tas_historical_mob,file=paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/disease_burden_data/historical/model_tas_historical_",country_select,".rda"))
+      save(model_tas_ssp126_mob,file=paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/disease_burden_data/ssp126/model_tas_ssp126_",country_select,".rda"))
+      save(model_tas_ssp245_mob,file=paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/disease_burden_data/ssp245/model_tas_ssp245_",country_select,".rda"))
+      save(model_tas_ssp585_mob,file=paste0("C:/Users/yxzhu/Desktop/DHS_data_analysis/Africa_Anemia/future_projection/disease_burden_data/ssp585/model_tas_ssp585_",country_select,".rda"))
+      
+}
+
+#==============================================================================================================================================================================================
+#plot
+library(ggplot2)
+
+RR_historical_plot<-matrix(NA,65,4)
+RR_historical_plot<-data.frame(RR_historical_plot)
+colnames(RR_historical_plot)<-c("year","PAF_RR","PAF_RR_low","PAF_RR_high")
+RR_historical_plot$year<-dis_tem_merge_RR_historical$X1
+RR_historical_plot$PAF_RR<-dis_tem_merge_RR_historical$PAF
+RR_historical_plot$PAF_RR_low<-dis_tem_merge_RR_historical_low$PAF
+RR_historical_plot$PAF_RR_high<-dis_tem_merge_RR_historical_high$PAF
+
+RR_ssp126_plot<-matrix(NA,85,4)
+RR_ssp126_plot<-data.frame(RR_ssp126_plot)
+colnames(RR_ssp126_plot)<-c("year","PAF_RR","PAF_RR_low","PAF_RR_high")
+RR_ssp126_plot$year<-dis_tem_merge_RR_ssp126$X1
+RR_ssp126_plot$PAF_RR<-dis_tem_merge_RR_ssp126$PAF
+RR_ssp126_plot$PAF_RR_low<-dis_tem_merge_RR_ssp126_low$PAF
+RR_ssp126_plot$PAF_RR_high<-dis_tem_merge_RR_ssp126_high$PAF
+
+RR_ssp245_plot<-matrix(NA,85,4)
+RR_ssp245_plot<-data.frame(RR_ssp245_plot)
+colnames(RR_ssp245_plot)<-c("year","PAF_RR","PAF_RR_low","PAF_RR_high")
+RR_ssp245_plot$year<-dis_tem_merge_RR_ssp245$X1
+RR_ssp245_plot$PAF_RR<-dis_tem_merge_RR_ssp245$PAF
+RR_ssp245_plot$PAF_RR_low<-dis_tem_merge_RR_ssp245_low$PAF
+RR_ssp245_plot$PAF_RR_high<-dis_tem_merge_RR_ssp245_high$PAF
+
+RR_ssp585_plot<-matrix(NA,85,4)
+RR_ssp585_plot<-data.frame(RR_ssp585_plot)
+colnames(RR_ssp585_plot)<-c("year","PAF_RR","PAF_RR_low","PAF_RR_high")
+RR_ssp585_plot$year<-dis_tem_merge_RR_ssp585$X1
+RR_ssp585_plot$PAF_RR<-dis_tem_merge_RR_ssp585$PAF
+RR_ssp585_plot$PAF_RR_low<-dis_tem_merge_RR_ssp585_low$PAF
+RR_ssp585_plot$PAF_RR_high<-dis_tem_merge_RR_ssp585_high$PAF
+
+RR_historical_plot_whole<-RR_historical_plot
+RR_ssp126_plot_whole<-RR_ssp126_plot
+RR_ssp245_plot_whole<-RR_ssp245_plot
+RR_ssp585_plot_whole<-RR_ssp585_plot
+
+RR_historical_plot_whole[66,]<-RR_ssp126_plot_whole[1,]
+RR_historical_plot_whole<-RR_historical_plot_whole[c(36:66),]
+
+x_0_whole<-c(RR_historical_plot_whole$year,rev(RR_historical_plot_whole$year))
+y_0_whole<-c(RR_historical_plot_whole$PAF_RR_high,rev(RR_historical_plot_whole$PAF_RR_low))
+
+x_1_whole<-c(RR_ssp126_plot_whole$year,rev(RR_ssp126_plot_whole$year))
+y_1_whole<-c(RR_ssp126_plot_whole$PAF_RR_high,rev(RR_ssp126_plot_whole$PAF_RR_low))
+
+x_2_whole<-c(RR_ssp245_plot_whole$year,rev(RR_ssp245_plot_whole$year))
+y_2_whole<-c(RR_ssp245_plot_whole$PAF_RR_high,rev(RR_ssp245_plot_whole$PAF_RR_low))
+
+x_3_whole<-c(RR_ssp585_plot_whole$year,rev(RR_ssp585_plot_whole$year))
+y_3_whole<-c(RR_ssp585_plot_whole$PAF_RR_high,rev(RR_ssp585_plot_whole$PAF_RR_low))
+
+#=============================================================================================================================================================================================
+
+jpeg("C:/Users/yxzhu/Desktop/amenia_PAF_region.jpg",res=300,
+     width=3000,height=2000)
+
+par(par(mar=c(4,4,2,1)),cex.axis=0.9,cex.lab=1.2,mgp=c(2.5,1,0))
+
+layout(matrix(1:6,2,3))
+
+plot(PAF_RR ~ year,data =RR_ssp245_plot_whole,type = "l",ylab="Excess cases per 100,000 person-year",xlim=c(1985,2100),ylim=c(-3000,15000),xlab="Year",col=rgb(0.1, 0.3, 0.6,1),main="(A) Sub-Saharan Africa",
+    cex.main=1.5,cex.lab=1.5, cex.axis=1.2,lwd=2)
+lines(RR_historical_plot_whole$PAF_RR ~ RR_historical_plot_whole$year,col=rgb(0, 0, 0,1),lwd=2)
+lines(RR_ssp126_plot_whole$PAF_RR ~ RR_ssp126_plot_whole$year,col=rgb(0.1, 0.6, 0.3,1),lwd=2)
+lines(RR_ssp585_plot_whole$PAF_RR ~ RR_ssp585_plot_whole$year,col=rgb(0.6, 0.3, 0.1,1),lwd=2)
+polygon(x_3_whole, y_3_whole, col=rgb(0.8, 0, 0.1,0.2),border=NA)
+polygon(x_2_whole, y_2_whole, col=rgb(0.1, 0.3, 0.7,0.2),border=NA)
+polygon(x_1_whole, y_1_whole, col=rgb(0.3, 0.7, 0,0.2),border=NA)
+polygon(x_0_whole, y_0_whole, col=rgb(0, 0, 0,0.2),border=NA)
+abline(h=0,lty=3)
+abline(v=2015,lty=3)
+abline(v=2050,lty=3)
+
+dev.off()
+
+#=============================================================================================================================================================================================
