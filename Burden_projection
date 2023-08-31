@@ -24,7 +24,7 @@ for (i in 1:26){
     country_select<-country[i]
     cat(country_select)
 
-    #国家别城市列表导入
+    #country specific city names list
     city_location<-read.csv(paste0("/d2/public/DHS/DHS_Amenia/country_city/data_",country_select,"_city.csv"))
     city<-as.character(city_location$OBJECTID)
 
